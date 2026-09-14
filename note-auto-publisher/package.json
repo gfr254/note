@@ -1,0 +1,16 @@
+{
+  "name": "note-auto-publisher",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "generate": "node src/generate-post.mjs",
+    "publish": "node src/publish-note.mjs"
+  },
+  "dependencies": {
+    "playwright": "1.55.0"
+  }
+}

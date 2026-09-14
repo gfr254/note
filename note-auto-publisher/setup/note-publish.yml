@@ -1,0 +1,74 @@
+name: Generate and publish note article
+
+on:
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: "noteへ実際に公開する"
+        required: true
+        default: true
+        type: boolean
+  schedule:
+    - cron: "0 0 * * *"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: note-publish
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: note-auto-publisher
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Generate article
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_MODEL: ${{ vars.OPENAI_MODEL || 'gpt-4o-mini' }}
+        run: npm run generate
+
+      - name: Publish to note
+        env:
+          NOTE_STORAGE_STATE_B64: ${{ secrets.NOTE_STORAGE_STATE_B64 }}
+          PUBLISH_NOTE: ${{ github.event_name == 'schedule' || inputs.publish == true }}
+        run: npm run publish
+
+      - name: Upload run result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: note-publish-${{ github.run_id }}
+          path: note-auto-publisher/out/
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Commit publication state
+        if: success()
+        working-directory: .
+        run: |
+          if git diff --quiet -- note-auto-publisher/state/published.json; then
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add note-auto-publisher/state/published.json
+          git commit -m "chore: record note publication [skip ci]"
+          git push

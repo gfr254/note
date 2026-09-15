@@ -1,0 +1,86 @@
+name: Generate blog article
+
+on:
+  workflow_dispatch:
+    inputs:
+      topic:
+        description: "記事テーマ"
+        required: false
+        type: string
+      audience:
+        description: "想定読者"
+        required: false
+        type: string
+      angle:
+        description: "記事の切り口"
+        required: false
+        type: string
+      tone:
+        description: "文体"
+        required: false
+        type: string
+      length:
+        description: "希望文字数"
+        required: false
+        default: "1800〜2500文字"
+        type: string
+      platform:
+        description: "出力先"
+        required: false
+        default: "note"
+        type: string
+      commit_output:
+        description: "生成物をリポジトリにも保存する"
+        required: true
+        default: true
+        type: boolean
+  schedule:
+    - cron: "0 0 * * *"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: blog-article-generation
+  cancel-in-progress: false
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: note-auto-publisher
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Generate article
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY ${
+          OPENAI_MODEL: ${ vars.OPENAI_MODEL || 'gpt-4o-mini' ${
+          BLOG_TOPIC: ${ inputs.topic || '' ${
+          BLOG_AUDIENCE: ${ inputs.audience || '' ${
+          BLOG_ANGLE: ${ inputs.angle || '' ${
+          BLOG_TONE: ${ inputs.tone || '' ${
+          BLOG_LENGTH: ${ inputs.length || '' ${
+          BLOG_PLATFORM: ${ inputs.platform || 'note' ${
+        run: npm run generate
+      - name: Upload generated article
+        uses: actions/upload-artifact@v4
+        with:
+          name: blog-article-${ github.run_id ${
+          path: note-auto-publisher/out/
+          if-no-files-found: error
+          retention-days: 30
+      - name: Commit generated article
+        if: ${ github.event_name == 'schedule' || inputs.commit_output == true ${
+        working-directory: .
+        run: |
+          git add -f note-auto-publisher/out/post.json note-auto-publisher/out/post.txt note-auto-publisher/out/post.md note-auto-publisher/out/post.html
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git diff --cached --quiet || git commit -m "chore: generate blog article [skip ci]"
+          git push

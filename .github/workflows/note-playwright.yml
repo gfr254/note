@@ -1,0 +1,72 @@
+name: Note Playwright
+
+on:
+  workflow_dispatch:
+
+jobs:
+  check-note:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install Playwright
+        run: |
+          npm init -y
+          npm install playwright
+          npx playwright install --with-deps chromium
+
+      - name: Restore note storage state
+        env:
+          NOTE_STORAGE_STATE_B64: ${{ secrets.NOTE_STORAGE_STATE_B64 }}
+        run: |
+          node <<'NODE'
+          const fs = require("fs");
+
+          if (!process.env.NOTE_STORAGE_STATE_B64) {
+            throw new Error("NOTE_STORAGE_STATE_B64 is not set");
+          }
+
+          fs.writeFileSync(
+            "storage-state.json",
+            Buffer.from(process.env.NOTE_STORAGE_STATE_B64, "base64"),
+            { mode: 0o600 }
+          );
+          NODE
+
+      - name: Run Playwright
+        run: |
+          node <<'NODE'
+          const { chromium } = require("playwright");
+
+          (async () => {
+            const browser = await chromium.launch({
+              headless: true
+            });
+
+            const context = await browser.newContext({
+              storageState: "storage-state.json"
+            });
+
+            const page = await context.newPage();
+
+            await page.goto("https://note.com/", {
+              waitUntil: "domcontentloaded"
+            });
+
+            console.log("ページタイトル:", await page.title());
+            console.log("アクセス先:", page.url());
+
+            await browser.close();
+          })();
+          NODE
+
+      - name: Remove session file
+        if: always()
+        run: rm -f storage-state.json

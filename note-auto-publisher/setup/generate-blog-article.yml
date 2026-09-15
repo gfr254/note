@@ -59,24 +59,24 @@ jobs:
           node-version: 20
       - name: Generate article
         env:
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY ${
-          OPENAI_MODEL: ${ vars.OPENAI_MODEL || 'gpt-4o-mini' ${
-          BLOG_TOPIC: ${ inputs.topic || '' ${
-          BLOG_AUDIENCE: ${ inputs.audience || '' ${
-          BLOG_ANGLE: ${ inputs.angle || '' ${
-          BLOG_TONE: ${ inputs.tone || '' ${
-          BLOG_LENGTH: ${ inputs.length || '' ${
-          BLOG_PLATFORM: ${ inputs.platform || 'note' ${
+          OPENAI_API_KEY: ${{secrets.OPENAI_API_KEY}}
+          OPENAI_MODEL: ${{vars.OPENAI_MODEL || 'gpt-4o-mini'}}
+          BLOG_TOPIC: ${{inputs.topic || ''}}
+          BLOG_AUDIENCE: ${{inputs.audience || ''}}
+          BLOG_ANGLE: ${{inputs.angle || ''}}
+          BLOG_TONE: ${{inputs.tone || ''}}
+          BLOG_LENGTH: ${{inputs.length || ''}}
+          BLOG_PLATFORM: ${{inputs.platform || 'note'}}
         run: npm run generate
       - name: Upload generated article
         uses: actions/upload-artifact@v4
         with:
-          name: blog-article-${ github.run_id ${
+          name: blog-article-${{github.run_id}}
           path: note-auto-publisher/out/
           if-no-files-found: error
           retention-days: 30
       - name: Commit generated article
-        if: ${ github.event_name == 'schedule' || inputs.commit_output == true ${
+        if: ${{github.event_name == 'schedule' || inputs.commit_output == true}}
         working-directory: .
         run: |
           git add -f note-auto-publisher/out/post.json note-auto-publisher/out/post.txt note-auto-publisher/out/post.md note-auto-publisher/out/post.html

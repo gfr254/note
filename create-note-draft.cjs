@@ -10,6 +10,20 @@ const { chromium } = require('playwright');
     timezoneId: "Asia/Tokyo"
   });
 
+
+  
+  const page = await context.newPage();
+
+
+  
+  await page.goto('https://note.com/');
+  await page.getByRole('link', { name: '新規投稿' }).click();
+
+
+
+  
+  await page.getByRole('textbox', { name: '記事タイトル' }).click();
+
   console.log("現在のURL:", page.url());
   console.log("ページタイトル:", await page.title());
   console.log("textbox数:", await page.getByRole("textbox").count());
@@ -17,11 +31,8 @@ const { chromium } = require('playwright');
   await page.getByRole("textbox", {
     name: "記事タイトル"
   }).click();
+
   
-  const page = await context.newPage();
-  await page.goto('https://note.com/');
-  await page.getByRole('link', { name: '新規投稿' }).click();
-  await page.getByRole('textbox', { name: '記事タイトル' }).click();
   await page.getByRole('textbox', { name: '記事タイトル' }).fill('空冷');
   await page.getByRole('textbox').filter({ hasText: /^$/ }).click();
   await page.getByRole('textbox').nth(1).fill('ビートル');

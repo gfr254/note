@@ -18,7 +18,7 @@ async function findVisible(frame, selectors, fromEnd = false) {
           return locator.nth(i);
         }
       } catch {
-        // 画面更新中に要素が消えた場合は次の候補を確認
+        // 画面更新中に要素が消えた場合は次の候補へ進む
       }
     }
   }
@@ -28,23 +28,32 @@ async function findVisible(frame, selectors, fromEnd = false) {
 
 async function printCandidates(page) {
   for (const [index, frame] of page.frames().entries()) {
-    const elements = await frame.locator(
-      "input, textarea, [contenteditable='true'], button"
-    ).evaluateAll((items) =>
-      items.map((element, index) => ({
-        index,
-        tag: element.tagName,
-        type: element.getAttribute("type"),
-        placeholder: element.getAttribute("placeholder"),
-        ariaLabel: element.getAttribute("aria-label"),
-        name: element.getAttribute("name"),
-        contenteditable: element.getAttribute("contenteditable"),
-        text: (element.textContent || "").trim().slice(0, 50)
-      }))
-    );
+    try {
+      const elements = await frame.locator(
+        "input, textarea, [contenteditable='true'], button"
+      ).evaluateAll((items) =>
+        items.map((element, index) => ({
+          index,
+          tag: element.tagName,
+          type: element.getAttribute("type"),
+          placeholder: element.getAttribute("placeholder"),
+          ariaLabel: element.getAttribute("aria-label"),
+          name: element.getAttribute("name"),
+          contenteditable: element.getAttribute("contenteditable")
+        }))
+      );
 
-    console.log(`frame ${index} URL: ${frame.url()}`);
-    console.log(`frame ${index} elements:`, JSON.stringify(elements));
+      console.log(`frame ${index} URL: ${frame.url()}`);
+      console.log(
+        `frame ${index} elements:`,
+        JSON.stringify(elements)
+      );
+    } catch (error) {
+      console.log(
+        `frame ${index} の要素取得に失敗:`,
+        error.message
+      );
+    }
   }
 }
 
@@ -62,14 +71,47 @@ async function printCandidates(page) {
 
     const page = await context.newPage();
 
-    await page.goto("https://editor.note.com/new", {
-      waitUntil: "domcontentloaded"
+    page.on("pageerror", (error) => {
+      console.log("ページJavaScriptエラー:", error.message);
     });
 
-    await page.waitForTimeout(5000);
+    const response = await page.goto(
+      "https://editor.note.com/new",
+      {
+        waitUntil: "domcontentloaded"
+      }
+    );
 
+    await page.waitForTimeout(15000);
+
+    console.log(
+      "HTTPステータス:",
+      response ? response.status() : "取得できませんでした"
+    );
     console.log("現在のURL:", page.url());
     console.log("ページタイトル:", await page.title());
+    console.log(
+      "document.readyState:",
+      await page.evaluate(() => document.readyState)
+    );
+
+    console.log(
+      "body文字数:",
+      await page.locator("body").innerText().then((text) => text.length)
+    );
+
+    console.log(
+      "body直下の要素:",
+      JSON.stringify(
+        await page.locator("body > *").evaluateAll((elements) =>
+          elements.slice(0, 20).map((element) => ({
+            tag: element.tagName,
+            id: element.id,
+            className: String(element.className).slice(0, 100)
+          }))
+        )
+      )
+    );
 
     await printCandidates(page);
 
@@ -78,8 +120,11 @@ async function printCandidates(page) {
       'input[placeholder*="タイトル"]',
       'input[aria-label*="記事タイトル"]',
       'input[aria-label*="タイトル"]',
+      'input[name*="title"]',
       'textarea[placeholder*="記事タイトル"]',
-      'textarea[placeholder*="タイトル"]'
+      'textarea[placeholder*="タイトル"]',
+      '[contenteditable="true"][data-placeholder*="タイトル"]',
+      '[contenteditable="true"][aria-label*="タイトル"]'
     ];
 
     const bodySelectors = [
@@ -99,19 +144,23 @@ async function printCandidates(page) {
       }
 
       if (!bodyInput) {
-        bodyInput = await findVisible(frame, bodySelectors, true);
+        bodyInput = await findVisible(
+          frame,
+          bodySelectors,
+          true
+        );
       }
     }
 
     if (!titleInput) {
       throw new Error(
-        "記事タイトル欄が見つかりません。上に表示されたelementsの情報を確認してください。"
+        "記事タイトル欄が見つかりません。上の「elements」情報を確認してください。"
       );
     }
 
     if (!bodyInput) {
       throw new Error(
-        "本文欄が見つかりません。上に表示されたelementsの情報を確認してください。"
+        "本文欄が見つかりません。上の「elements」情報を確認してください。"
       );
     }
 
@@ -137,7 +186,7 @@ async function printCandidates(page) {
 
     if (!saveButton) {
       throw new Error(
-        "下書き保存ボタンが見つかりません。公開ボタンは安全のため自動クリックしていません。"
+        "下書き保存ボタンが見つかりません。公開操作は実行していません。"
       );
     }
 

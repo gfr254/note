@@ -54,6 +54,30 @@ console.log(
   await page.locator("iframe").count()
 );
 
+
+  console.log("現在のURL:", page.url());
+console.log("ページタイトル:", await page.title());
+
+const fields = await page.locator(
+  "input, textarea, [contenteditable='true']"
+).evaluateAll((elements) =>
+  elements.map((element, index) => ({
+    index,
+    tag: element.tagName,
+    type: element.getAttribute("type"),
+    placeholder: element.getAttribute("placeholder"),
+    ariaLabel: element.getAttribute("aria-label"),
+    name: element.getAttribute("name"),
+    contenteditable: element.getAttribute("contenteditable")
+  }))
+);
+
+console.log("入力要素:", JSON.stringify(fields));
+
+console.log(
+  "iframe数:",
+  await page.locator("iframe").count()
+);
   
   await page.getByRole("textbox", {
     name: "記事タイトル"

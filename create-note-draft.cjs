@@ -19,7 +19,9 @@ const { chromium } = require('playwright');
   await page.goto('https://note.com/');
   await page.getByRole('link', { name: '新規投稿' }).click();
 
-
+  console.log("現在のURL:", page.url());
+  console.log("ページタイトル:", await page.title());
+  console.log("textbox数:", await page.getByRole("textbox").count());
 
   
   await page.getByRole('textbox', { name: '記事タイトル' }).click();

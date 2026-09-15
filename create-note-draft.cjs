@@ -12,13 +12,13 @@ async function findVisible(frame, selectors, fromEnd = false) {
     const end = fromEnd ? -1 : count;
     const step = fromEnd ? -1 : 1;
 
-    for (let i = start; i !== end; i += step) {
+    for (let index = start; index !== end; index += step) {
       try {
-        if (await locator.nth(i).isVisible()) {
-          return locator.nth(i);
+        if (await locator.nth(index).isVisible()) {
+          return locator.nth(index);
         }
       } catch {
-        // 画面更新中に要素が消えた場合は次の候補へ進む
+        // 画面更新中に要素が消えた場合は次の候補を確認
       }
     }
   }
@@ -27,7 +27,7 @@ async function findVisible(frame, selectors, fromEnd = false) {
 }
 
 async function printCandidates(page) {
-  for (const [index, frame] of page.frames().entries()) {
+  for (const [frameIndex, frame] of page.frames().entries()) {
     try {
       const elements = await frame.locator(
         "input, textarea, [contenteditable='true'], button"
@@ -43,14 +43,14 @@ async function printCandidates(page) {
         }))
       );
 
-      console.log(`frame ${index} URL: ${frame.url()}`);
+      console.log(`frame ${frameIndex} URL: ${frame.url()}`);
       console.log(
-        `frame ${index} elements:`,
+        `frame ${frameIndex} elements:`,
         JSON.stringify(elements)
       );
     } catch (error) {
       console.log(
-        `frame ${index} の要素取得に失敗:`,
+        `frame ${frameIndex} の要素取得に失敗:`,
         error.message
       );
     }
@@ -66,7 +66,8 @@ async function printCandidates(page) {
     const context = await browser.newContext({
       storageState: "storage-state.json",
       locale: "ja-JP",
-      timezoneId: "Asia/Tokyo"
+      timezoneId: "Asia/Tokyo",
+      javaScriptEnabled: true
     });
 
     const page = await context.newPage();
@@ -74,6 +75,33 @@ async function printCandidates(page) {
     page.on("pageerror", (error) => {
       console.log("ページJavaScriptエラー:", error.message);
     });
+
+    page.on("console", (message) => {
+      if (message.type() === "error") {
+        console.log(
+          "ブラウザコンソールエラー:",
+          message.text()
+        );
+      }
+    });
+
+    page.on("requestfailed", (request) => {
+      console.log(
+        "リクエスト失敗:",
+        request.resourceType(),
+        request.failure()?.errorText || "unknown"
+      );
+    });
+
+    console.log("noteトップページを開きます。");
+
+    await page.goto("https://note.com/", {
+      waitUntil: "domcontentloaded"
+    });
+
+    await page.waitForTimeout(5000);
+
+    console.log("エディタページを開きます。");
 
     const response = await page.goto(
       "https://editor.note.com/new",
@@ -84,21 +112,40 @@ async function printCandidates(page) {
 
     await page.waitForTimeout(15000);
 
+    try {
+      await page.waitForFunction(
+        () => {
+          const root = document.querySelector("#__next");
+          return root && root.children.length > 0;
+        },
+        null,
+        { timeout: 30000 }
+      );
+    } catch {
+      console.log(
+        "エディタの画面描画を30秒以内に確認できませんでした。"
+      );
+    }
+
     console.log(
       "HTTPステータス:",
       response ? response.status() : "取得できませんでした"
     );
+
     console.log("現在のURL:", page.url());
     console.log("ページタイトル:", await page.title());
+
     console.log(
       "document.readyState:",
       await page.evaluate(() => document.readyState)
     );
 
-    console.log(
-      "body文字数:",
-      await page.locator("body").innerText().then((text) => text.length)
-    );
+    const bodyText = await page
+      .locator("body")
+      .innerText()
+      .catch(() => "");
+
+    console.log("body文字数:", bodyText.length);
 
     console.log(
       "body直下の要素:",
@@ -123,7 +170,9 @@ async function printCandidates(page) {
       'input[name*="title"]',
       'textarea[placeholder*="記事タイトル"]',
       'textarea[placeholder*="タイトル"]',
+      '[contenteditable="true"][data-placeholder*="記事タイトル"]',
       '[contenteditable="true"][data-placeholder*="タイトル"]',
+      '[contenteditable="true"][aria-label*="記事タイトル"]',
       '[contenteditable="true"][aria-label*="タイトル"]'
     ];
 
@@ -140,7 +189,10 @@ async function printCandidates(page) {
 
     for (const frame of page.frames()) {
       if (!titleInput) {
-        titleInput = await findVisible(frame, titleSelectors);
+        titleInput = await findVisible(
+          frame,
+          titleSelectors
+        );
       }
 
       if (!bodyInput) {
@@ -154,17 +206,20 @@ async function printCandidates(page) {
 
     if (!titleInput) {
       throw new Error(
-        "記事タイトル欄が見つかりません。上の「elements」情報を確認してください。"
+        "記事タイトル欄が見つかりません。上のelements情報を確認してください。"
       );
     }
 
     if (!bodyInput) {
       throw new Error(
-        "本文欄が見つかりません。上の「elements」情報を確認してください。"
+        "本文欄が見つかりません。上のelements情報を確認してください。"
       );
     }
 
+    console.log("タイトルを入力します。");
     await titleInput.fill(TITLE);
+
+    console.log("本文を入力します。");
     await bodyInput.fill(BODY);
 
     await page.waitForTimeout(1000);
@@ -180,7 +235,10 @@ async function printCandidates(page) {
 
     for (const frame of page.frames()) {
       if (!saveButton) {
-        saveButton = await findVisible(frame, saveSelectors);
+        saveButton = await findVisible(
+          frame,
+          saveSelectors
+        );
       }
     }
 
@@ -201,4 +259,7 @@ async function printCandidates(page) {
   } finally {
     await browser.close();
   }
-})();
+})().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});

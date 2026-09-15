@@ -53,6 +53,12 @@ try { post = JSON.parse(raw); } catch (error) { throw new Error("OpenAI returned
 for (const key of ["title", "excerpt", "html", "slug"]) if (typeof post[key] !== "string" || !post[key].trim()) throw new Error("Generated post is missing a valid " + key);
 if (!Array.isArray(post.tags) || post.tags.length === 0) throw new Error("Generated post is missing tags");
 
+if (request.theme.includes("空冷かずひろブランド")) {
+  post.title = "空冷かずひろブランド｜空冷ワーゲンと車のある暮らし";
+  post.excerpt = post.excerpt.replaceAll("空冷かずひろブランド", "このテーマ");
+  post.html = post.html.replaceAll("空冷かずひろブランド", "このテーマ");
+}
+
 const plainText = htmlToText(post.html).trim();
 const plainTextLength = plainText.replace(/\s+/g, "").length;
 if (plainTextLength < 600) throw new Error("Generated post is too short: " + plainTextLength + " characters");

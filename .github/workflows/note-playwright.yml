@@ -41,7 +41,7 @@ jobs:
           NODE
 
       - name: Create note draft
-        run: node create-note-draft.mjs
+        run: node create-note-draft.cjs
 
       - name: Remove session file
         if: always()

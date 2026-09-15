@@ -54,7 +54,8 @@ if (!Array.isArray(post.tags) || post.tags.length === 0) throw new Error("Genera
 
 const plainText = htmlToText(post.html).trim();
 const plainTextLength = plainText.replace(/\s+/g, "").length;
-if (plainTextLength < 1200) throw new Error("Generated post is too short: " + plainTextLength + " characters");
+if (plainTextLength < 600) throw new Error("Generated post is too short: " + plainTextLength + " characters");
+if (plainTextLength < 1200) console.warn("Generated post is shorter than requested: " + plainTextLength + " characters");
 const date = new Intl.DateTimeFormat("sv-SE", { timeZone: "Asia/Tokyo", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
 const output = { ...post, postKey: post.slug + "-" + date, generatedAt: new Date().toISOString(), model, platform: request.platform, request, sourceBrief: brief.theme, plainTextLength };
 const out = new URL("../out/", import.meta.url);

@@ -1,4 +1,5 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
 
 const brief = JSON.parse(await readFile(new URL("../content/brief.json", import.meta.url), "utf8"));
 const apiKey = process.env.OPENAI_API_KEY;
@@ -70,8 +71,23 @@ const plainTextLength = plainText.replace(/\s+/g, "").length;
 if (plainTextLength < 600) throw new Error("Generated post is too short: " + plainTextLength + " characters");
 if (plainTextLength < 1200) console.warn("Generated post is shorter than requested: " + plainTextLength + " characters");
 const date = new Intl.DateTimeFormat("sv-SE", { timeZone: "Asia/Tokyo", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
-const output = { ...post, postKey: post.slug + "-" + date, generatedAt: new Date().toISOString(), model, platform: request.platform, request, sourceBrief: brief.theme, plainTextLength };
 const out = new URL("../out/", import.meta.url);
+    let previousOutput = null;
+    try {
+      previousOutput = JSON.parse(await readFile(new URL("post.json", out), "utf8"));
+    } catch (error) {
+      if (error.code !== "ENOENT") throw error;
+    }
+    const normalizeDedupeText = (value) => String(value ?? "").replace(/<[^>]+>/g, " ").replace(/&nbsp;|&#160;/gi, " ").replace(/&amp;/gi, "&").replace(/&lt;/gi, "<").replace(/&gt;/gi, ">").replace(/&quot;/gi, "\"").replace(/&#39;|&apos;/gi, "'").normalize("NFKC").toLocaleLowerCase("ja").replace(/\s+/g, " ").trim();
+    const fingerprint = (title, html) => ({ titleHash: createHash("sha256").update(normalizeDedupeText(title)).digest("hex"), bodyHash: createHash("sha256").update(normalizeDedupeText(html)).digest("hex") });
+    const history = Array.isArray(previousOutput?.dedupeHistory) ? previousOutput.dedupeHistory : [];
+    if (previousOutput?.title && previousOutput?.html) history.unshift(fingerprint(previousOutput.title, previousOutput.html));
+    const candidate = fingerprint(post.title, post.html);
+    const candidateBodyLength = normalizeDedupeText(post.html).length;
+    const duplicate = history.find((entry) => entry.titleHash === candidate.titleHash || (candidateBodyLength >= 80 && entry.bodyHash === candidate.bodyHash));
+    if (duplicate) throw new Error("記事タイトルまたは本文が過去のNote下書きと重複したため、同じ下書きの保存を中止しました。");
+    const dedupeHistory = [candidate, ...history.filter((entry) => entry.titleHash !== candidate.titleHash && entry.bodyHash !== candidate.bodyHash)].slice(0, 1000);
+    const output = { ...post, dedupeHistory, postKey: post.slug + "-" + date, generatedAt: new Date().toISOString(), model, platform: request.platform, request, sourceBrief: brief.theme, plainTextLength };
 await mkdir(out, { recursive: true });
 await writeFile(new URL("post.json", out), JSON.stringify(output, null, 2) + "\n");
 await writeFile(new URL("post.txt", out), post.title + "\n\n" + post.excerpt + "\n\n" + plainText + "\n\nタグ: " + post.tags.map(tag => "#" + tag.replace(/^#/, "")).join(" ") + "\n");

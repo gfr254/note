@@ -28,7 +28,9 @@ const systemPrompt = [
   "広告やアフィリエイトを含める場合は、広告であることが分かる表現を入れてください。",
   "本文HTMLはh2、h3、p、ul、li、strong、em、brだけを使ってください。",
   "script、style、iframe、画像URL、外部リンク、Markdownは使わないでください。",
-  "記事では空冷VWの購入前調査、費用、現車確認、維持管理、オーナーの声を中心に扱ってください。"
+  "記事では空冷VWの購入前調査、費用、現車確認、維持管理、オーナーの声を中心に扱ってください。",
+  "タイトルは記事の中心キーワードと読者の具体的な疑問・目的が伝わる自然な日本語にしてください。ブランド名だけの固定タイトルやキーワードの羅列は禁止します。",
+  "note向けに独自の切り口を設け、Livedoor・はてな・Steemitの記事を全文転載・言い換えしないでください。"
 ].join("\n");
 const userPrompt = [
   "次の企画から、ブログ記事を1本作成してください。",
@@ -44,7 +46,7 @@ const userPrompt = [
   "公開情報、販売情報、専門家の説明、オーナーの体験談を区別してください。",
   "確認できない具体的な数字、店舗名、車両情報、故障内容を創作しないでください。",
   "JSONのみで返してください。キーはtitle、excerpt、tags、html、slugに固定します。",
-  "titleは30文字前後、excerptは80〜120文字、tagsは3〜6個、htmlは本文HTML、slugは英小文字とハイフンだけにしてください。"
+  "titleは中心キーワードを自然に含む30文字前後の読者向けタイトル、excerptは80〜120文字で記事の答えと対象読者を伝えてください。tagsは3〜6個、htmlは本文HTML、slugは英小文字とハイフンだけにしてください。"
 ].join("\n");
 async function requestPost(extraInstructions = "") {
   const response = await fetch("https://api.openai.com/v1/chat/completions", {
@@ -64,11 +66,7 @@ async function requestPost(extraInstructions = "") {
 }
 let post = await requestPost();
 
-if (request.theme.includes("空冷かずひろブランド")) {
-  post.title = "空冷かずひろブランド｜空冷ワーゲンと車のある暮らし";
-  post.excerpt = post.excerpt.replaceAll("空冷かずひろブランド", "このテーマ");
-  post.html = post.html.replaceAll("空冷かずひろブランド", "このテーマ");
-}
+
 
 let plainText = htmlToText(post.html).trim();
 let plainTextLength = plainText.replace(/\s+/g, "").length;
@@ -99,11 +97,7 @@ const out = new URL("../out/", import.meta.url);
         "重複した本文の冒頭（再利用禁止）: " + repeatedBody,
         "同じタイトルや文章の言い換えではなく、企画の範囲内で別の判断材料・調査観点を扱ってください。入力にない事実や体験は追加しないでください。"
       ].join("\n"));
-      if (request.theme.includes("空冷かずひろブランド")) {
-        post.title = "空冷かずひろブランド｜空冷ワーゲンと車のある暮らし";
-        post.excerpt = post.excerpt.replaceAll("空冷かずひろブランド", "このテーマ");
-        post.html = post.html.replaceAll("空冷かずひろブランド", "このテーマ");
-      }
+      
       plainText = htmlToText(post.html).trim();
       plainTextLength = plainText.replace(/\s+/g, "").length;
       if (plainTextLength < 600) throw new Error("Regenerated post is too short: " + plainTextLength + " characters");

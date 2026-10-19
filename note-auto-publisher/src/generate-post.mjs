@@ -18,7 +18,9 @@ const request = {
 
 const systemPrompt = [
   "あなたは日本語の個人メディア編集者です。",
-  "空冷VWをこれから購入したい読者に役立つ、誠実で読みやすい記事を作ってください。",
+  "空冷VWの購入検討に役立つ、誠実で読みやすい一般向けガイド記事を作ってください。",
+  "日記や体験談にせず、一人称（私、僕、我が家）で本人の行動や気持ちを語らないでください。",
+  "家族、予算、候補車両、販売サイトを実際に調べたことなど、与えられていない筆者の個人事情を作らないでください。",
   "筆者は現時点で空冷VWを所有していません。",
   "筆者が所有、運転、修理、整備したような一人称の体験談を書いてはいけません。",
   "公開情報、販売情報、専門家の説明、オーナーの体験談を区別して紹介してください。",
@@ -28,10 +30,7 @@ const systemPrompt = [
   "広告やアフィリエイトを含める場合は、広告であることが分かる表現を入れてください。",
   "本文HTMLはh2、h3、p、ul、li、strong、em、brだけを使ってください。",
   "script、style、iframe、画像URL、外部リンク、Markdownは使わないでください。",
-  "記事では空冷VWの購入前調査、費用、現車確認、維持管理、オーナーの声を中心に扱ってください。"
-].join("\n");
-const userPrompt = [
-  "次の企画から、ブログ記事を1本作成してください。",
+  "記事では購入前に確認する車両状態、整備履歴、費用項目、専門店への質問など、一般的に役立つ確認手順を中心にしてください。",
   "出力先: " + request.platform,
   "希望文字数: " + request.length,
   "テーマ: " + request.theme,
@@ -72,6 +71,10 @@ if (request.theme.includes("空冷かずひろブランド")) {
 
 let plainText = htmlToText(post.html).trim();
 let plainTextLength = plainText.replace(/\s+/g, "").length;
+const personalNarrative = /私|僕|わたし|ぼく|我が家|(?:調べ|調査|確認|比較|購入|運転|修理|整備|説明|感じ|驚き).{0,6}(?:しました|した|してきました|してきた|しています|している)/;
+if (personalNarrative.test(post.title + "\n" + post.excerpt + "\n" + plainText)) {
+  throw new Error("Generated article contains unsupported personal experience; refusing to publish");
+}
 if (plainTextLength < 600) throw new Error("Generated post is too short: " + plainTextLength + " characters");
 if (plainTextLength < 1200) console.warn("Generated post is shorter than requested: " + plainTextLength + " characters");
 const date = new Intl.DateTimeFormat("sv-SE", { timeZone: "Asia/Tokyo", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());

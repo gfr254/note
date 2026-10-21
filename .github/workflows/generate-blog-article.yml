@@ -34,6 +34,11 @@ on:
         required: true
         default: true
         type: boolean
+      publish:
+        description: "noteへ実際に公開する（公開操作）"
+        required: true
+        default: false
+        type: boolean
   schedule:
     - cron: "0 0 * * 6"
 
@@ -47,6 +52,7 @@ concurrency:
 jobs:
   generate:
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     defaults:
       run:
         working-directory: note-auto-publisher
@@ -59,28 +65,38 @@ jobs:
           node-version: 20
       - name: Generate article
         env:
-          OPENAI_API_KEY: ${{secrets.OPENAI_API_KEY}}
-          OPENAI_MODEL: ${{vars.OPENAI_MODEL || 'gpt-4o-mini'}}
-          BLOG_TOPIC: ${{inputs.topic || ''}}
-          BLOG_AUDIENCE: ${{inputs.audience || ''}}
-          BLOG_ANGLE: ${{inputs.angle || ''}}
-          BLOG_TONE: ${{inputs.tone || ''}}
-          BLOG_LENGTH: ${{inputs.length || ''}}
-          BLOG_PLATFORM: ${{inputs.platform || 'note'}}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_MODEL: ${{ vars.OPENAI_MODEL || 'gpt-4o-mini' }}
+          BLOG_TOPIC: ${{ inputs.topic || '' }}
+          BLOG_AUDIENCE: ${{ inputs.audience || '' }}
+          BLOG_ANGLE: ${{ inputs.angle || '' }}
+          BLOG_TONE: ${{ inputs.tone || '' }}
+          BLOG_LENGTH: ${{ inputs.length || '' }}
+          BLOG_PLATFORM: ${{ inputs.platform || 'note' }}
         run: npm run generate
-      - name: Upload generated article
+      - name: Install Playwright
+        run: npm install --no-save --no-package-lock --no-audit --no-fund playwright
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+      - name: Publish to note
+        env:
+          NOTE_STORAGE_STATE_B64: ${{ secrets.NOTE_STORAGE_STATE_B64 }}
+          PUBLISH_NOTE: ${{ github.event_name == 'schedule' || inputs.publish == true }}
+        run: node src/publish-note.mjs
+      - name: Upload generated article and publish result
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: blog-article-${{github.run_id}}
+          name: note-article-${{ github.run_id }}
           path: note-auto-publisher/out/
-          if-no-files-found: error
+          if-no-files-found: warn
           retention-days: 30
-      - name: Commit generated article
-        if: ${{github.event_name == 'schedule' || inputs.commit_output == true}}
+      - name: Commit generated article and publication state
+        if: ${{ github.event_name == 'schedule' || inputs.commit_output == true || inputs.publish == true }}
         working-directory: .
         run: |
-          git add -f note-auto-publisher/out/post.json note-auto-publisher/out/post.txt note-auto-publisher/out/post.md note-auto-publisher/out/post.html
+          git add -f note-auto-publisher/out/post.json note-auto-publisher/out/post.txt note-auto-publisher/out/post.md note-auto-publisher/out/post.html note-auto-publisher/out/publish-result.json note-auto-publisher/state/published.json
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git diff --cached --quiet || git commit -m "chore: generate blog article [skip ci]"
+          git diff --cached --quiet || git commit -m "chore: generate and publish note article [skip ci]"
           git push

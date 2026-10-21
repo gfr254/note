@@ -5,6 +5,11 @@ import { chromium } from "playwright";
 
 const root = new URL("../", import.meta.url);
 const post = JSON.parse(await readFile(new URL("out/post.json", root), "utf8"));
+const postText = String(post.html ?? "").replace(/<[^>]*>/g, " ");
+const personalNarrative = /私|僕|わたし|ぼく|我が家|(?:調べ|調査|確認|比較|購入|運転|修理|整備|説明|感じ|驚き).{0,6}(?:しました|した|してきました|してきた|しています|している)/;
+if (typeof post.title !== "string" || !post.title.trim() || postText.length < 600 || personalNarrative.test(post.title + "\n" + String(post.excerpt ?? "") + "\n" + postText)) {
+  throw new Error("Post failed publication safety checks; refusing to publish");
+}
 const stateUrl = new URL("state/published.json", root);
 const state = await readState(stateUrl);
 

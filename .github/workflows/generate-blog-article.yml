@@ -29,6 +29,11 @@ on:
         required: false
         default: "note"
         type: string
+      use_existing_draft:
+        description: "記事生成を行わず、note-auto-publisher/out/post.json の原稿を使う"
+        required: true
+        default: false
+        type: boolean
       commit_output:
         description: "生成物をリポジトリにも保存する"
         required: true
@@ -64,6 +69,7 @@ jobs:
         with:
           node-version: 20
       - name: Generate article
+        if: ${{ inputs.use_existing_draft != true }}
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           OPENAI_MODEL: ${{ vars.OPENAI_MODEL || 'gpt-4o-mini' }}

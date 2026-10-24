@@ -47,6 +47,16 @@ const systemPrompt = [
   "JSONのみで返してください。キーはtitle、excerpt、tags、html、slugに固定します。",
   "titleは中心キーワードを自然に含む30文字前後の読者向けタイトル、excerptは80〜120文字で記事の答えと対象読者を伝えてください。tagsは3〜6個、htmlは本文HTML、slugは英小文字とハイフンだけにしてください。"
 ].join("\n");
+
+const userPrompt = [
+  "次の条件に沿って、note向けの日本語記事を1本作成してください。",
+  "テーマ: " + request.theme,
+  "想定読者: " + request.audience,
+  "記事の切り口: " + request.angle,
+  "文体: " + request.tone,
+  "希望文字数: " + request.length,
+  "指定されたJSON形式だけで返してください。"
+].join("\n");
 async function requestPost(extraInstructions = "") {
   const response = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",

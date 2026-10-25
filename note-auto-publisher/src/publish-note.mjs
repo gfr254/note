@@ -89,11 +89,26 @@ try {
   await page.waitForLoadState("networkidle").catch(() => {});
   await page.waitForTimeout(1_000);
 
-  const url = page.url();
-  if (url.includes("/notes/new") || url.includes("/login")) {
-    throw new Error(`note did not finish publishing; current URL: ${url}`);
+  const editorPath = new URL(page.url()).pathname;
+  const noteId = editorPath.match(/^\/notes\/([^/]+)\/publish\/?$/)?.[1];
+  if (!noteId) {
+    throw new Error("could not verify the published Note ID from the editor URL");
   }
-
+  const publicResponse = await page.request.get("https://note.com/notes/" + noteId);
+  if (!publicResponse.ok()) {
+    throw new Error("public Note page verification failed with HTTP " + publicResponse.status());
+  }
+  const publicHtml = await publicResponse.text();
+  const canonicalTag = [...publicHtml.matchAll(/<link\b[^>]*>/gi)].find(([tag]) => /\brel=["']canonical["']/i.test(tag))?.[0];
+  const canonicalHref = canonicalTag?.match(/\bhref=["']([^"']+)["']/i)?.[1];
+  if (!canonicalHref) {
+    throw new Error("public Note page did not provide a canonical URL");
+  }
+  const publicUrl = new URL(canonicalHref);
+  if (publicUrl.origin !== "https://note.com" || !publicUrl.pathname.endsWith("/n/" + noteId)) {
+    throw new Error("public Note canonical URL does not match the published article");
+  }
+  const url = publicUrl.toString();
   state.posts[post.postKey] = {
     title: post.title,
     url,

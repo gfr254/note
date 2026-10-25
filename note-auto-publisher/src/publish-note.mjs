@@ -39,7 +39,7 @@ const authDir = await mkdtemp(join(tmpdir(), "note-auth-"));
 const authPath = join(authDir, "storage-state.json");
 await writeFile(authPath, Buffer.from(encodedState, "base64"));
 
-const browser = await chromium.launch({ headless: true });
+const browser = await chromium.launch({ headless: false });
 const context = await browser.newContext({ storageState: authPath });
 const page = await context.newPage();
 page.setDefaultTimeout(20_000);

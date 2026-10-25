@@ -55,15 +55,22 @@ try {
     throw new Error("note session is not authenticated; refresh NOTE_STORAGE_STATE_B64");
   }
 
-  const title = page.locator(
-    'input[placeholder*="タイトル"], textarea[placeholder*="タイトル"], input[name="title"]'
-  ).first();
-  await title.waitFor({ state: "visible" });
-  await title.fill(post.title);
+  const titleInput = page.locator(
+        'input[placeholder*="タイトル"], textarea[placeholder*="タイトル"], input[name="title"]'
+      ).first();
+      const editableFields = page.locator('[contenteditable="true"]:visible');
+      const titleIsEditable = (await titleInput.count()) === 0;
+      const editableCount = await editableFields.count();
+      if (titleIsEditable && editableCount < 2) {
+        throw new Error("note editor did not expose separate title and body fields");
+      }
+      const title = titleIsEditable ? editableFields.first() : titleInput;
+      await title.waitFor({ state: "visible" });
+      await title.fill(post.title);
 
-  const editor = page.locator('[contenteditable="true"]').first();
-  await editor.waitFor({ state: "visible" });
-  await editor.click();
+      const editor = editableFields.nth(titleIsEditable ? 1 : 0);
+      await editor.waitFor({ state: "visible" });
+      await editor.click();
   await editor.evaluate((element, html) => {
     element.innerHTML = html;
     element.dispatchEvent(new InputEvent("input", {
@@ -73,7 +80,7 @@ try {
     }));
   }, post.html);
 
-  const publishSettings = page.getByRole("button", { name: /公開設定|公開する|投稿する/ }).first();
+  const publishSettings = page.getByRole("button", { name: /公開に進む|公開設定|公開する|投稿する/ }).first();
   await publishSettings.click();
   await page.waitForTimeout(500);
 

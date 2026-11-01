@@ -7,6 +7,7 @@
     "node": ">=20"
   },
   "scripts": {
-    "generate": "node src/generate-post.mjs"
+    "generate": "node src/generate-post.mjs",
+    "test": "node --test test/*.test.mjs"
   }
 }

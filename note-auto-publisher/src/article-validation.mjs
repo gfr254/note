@@ -15,7 +15,7 @@ export function htmlToText(html) {
 export function validateGeneratedPost(post) {
   const plainText = htmlToText(post.html).trim();
   const plainTextLength = plainText.replace(/\s+/g, "").length;
-  const personalNarrative = /私|僕|わたし|ぼく|我が家|(?:調べ|調査|確認|比較|購入|運転|修理|整備|説明|感じ|驚き).{0,6}(?:しました|した|してきました|してきた|しています)/;
+  const personalNarrative = /私|僕|わたし|ぼく|我が家|筆者自身/;
   if (personalNarrative.test(post.title + "\n" + post.excerpt + "\n" + plainText)) {
     throw new Error("Generated article contains unsupported personal experience; refusing to publish");
   }

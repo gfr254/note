@@ -26,3 +26,9 @@ test("fails closed after the bounded attempts", async () => {
   );
   assert.equal(calls, 3);
 });
+
+test("allows general purchase and inspection guidance without first-person claims", async () => {
+  const guidance = { ...validPost, html: "<p>購入した場合は整備記録を確認したいものです。</p>" + safeBody };
+  const result = await requestValidatedPost(async () => guidance);
+  assert.equal(result.post, guidance);
+});

@@ -1,5 +1,6 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
+import { htmlToText, requestValidatedPost } from "./article-validation.mjs";
 
 const brief = JSON.parse(await readFile(new URL("../content/brief.json", import.meta.url), "utf8"));
 const apiKey = process.env.OPENAI_API_KEY;
@@ -76,17 +77,7 @@ async function requestPost(extraInstructions = "") {
   if (!Array.isArray(post.tags) || post.tags.length === 0) throw new Error("Generated post is missing tags");
   return post;
 }
-let post = await requestPost();
-
-
-
-let plainText = htmlToText(post.html).trim();
-let plainTextLength = plainText.replace(/\s+/g, "").length;
-const personalNarrative = /私|僕|わたし|ぼく|我が家|(?:調べ|調査|確認|比較|購入|運転|修理|整備|説明|感じ|驚き).{0,6}(?:しました|した|してきました|してきた|しています|している)/;
-if (personalNarrative.test(post.title + "\n" + post.excerpt + "\n" + plainText)) {
-  throw new Error("Generated article contains unsupported personal experience; refusing to publish");
-}
-if (plainTextLength < 600) throw new Error("Generated post is too short: " + plainTextLength + " characters");
+let { post, plainText, plainTextLength } = await requestValidatedPost(requestPost);
 if (plainTextLength < 1200) console.warn("Generated post is shorter than requested: " + plainTextLength + " characters");
 const date = new Intl.DateTimeFormat("sv-SE", { timeZone: "Asia/Tokyo", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
 const out = new URL("../out/", import.meta.url);
@@ -107,21 +98,24 @@ const out = new URL("../out/", import.meta.url);
       const repeatedTitle = post.title;
       const repeatedBody = plainText.slice(0, 4000);
       console.warn("Duplicate Note draft detected; requesting one distinct replacement.");
-      post = await requestPost([
+      const duplicateInstructions = [
         "前回の候補が既存下書きと重複しました。別の切り口で記事を再生成してください。",
         "重複したタイトル: " + repeatedTitle,
         "重複した本文の冒頭（再利用禁止）: " + repeatedBody,
         "同じタイトルや文章の言い換えではなく、企画の範囲内で別の判断材料・調査観点を扱ってください。入力にない事実や体験は追加しないでください。"
-      ].join("\n"));
-
-      plainText = htmlToText(post.html).trim();
-      plainTextLength = plainText.replace(/\s+/g, "").length;
-      if (plainTextLength < 600) throw new Error("Regenerated post is too short: " + plainTextLength + " characters");
+      ].join("\n");
+      const replacement = await requestValidatedPost((validationFeedback) =>
+        requestPost([duplicateInstructions, validationFeedback].filter(Boolean).join("\n"))
+      );
+      post = replacement.post;
+      plainText = replacement.plainText;
+      plainTextLength = replacement.plainTextLength;
       candidate = fingerprint(post.title, post.html);
       const retryBodyLength = normalizeDedupeText(post.html).length;
       const repeatedAgain = history.find((entry) => entry.titleHash === candidate.titleHash || (retryBodyLength >= 80 && entry.bodyHash === candidate.bodyHash));
       if (repeatedAgain) throw new Error("再生成後も過去のNote下書きと重複したため、重複防止のため保存を中止しました。");
     }
+    
     const dedupeHistory = [candidate, ...history.filter((entry) => entry.titleHash !== candidate.titleHash && entry.bodyHash !== candidate.bodyHash)].slice(0, 1000);
     const output = { ...post, dedupeHistory, postKey: post.slug + "-" + date, generatedAt: new Date().toISOString(), model, platform: request.platform, request, sourceBrief: brief.theme, plainTextLength };
 await mkdir(out, { recursive: true });
@@ -131,6 +125,5 @@ await writeFile(new URL("post.md", out), "# " + post.title + "\n\n" + post.excer
 await writeFile(new URL("post.html", out), "<!doctype html><meta charset=\"utf-8\"><title>" + escapeHtml(post.title) + "</title><article><h1>" + escapeHtml(post.title) + "</h1><p>" + escapeHtml(post.excerpt) + "</p>" + post.html + "<p>" + post.tags.map(tag => "#" + escapeHtml(tag.replace(/^#/, ""))).join(" ") + "</p></article>");
 console.log(JSON.stringify({ generated: true, postKey: output.postKey, title: output.title, platform: output.platform, tags: output.tags, plainTextLength: output.plainTextLength }));
 
-function htmlToText(html) { return html.replace(/<br\s*\/?>(?=\s*)/gi, "\n").replace(/<li[^>]*>/gi, "- ").replace(/<\/(p|h1|h2|h3|h4|li|ul|ol|div)>/gi, "\n").replace(/<[^>]+>/g, "").replace(/&nbsp;/g, " ").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, "\"").replace(/\n{3,}/g, "\n\n"); }
 function htmlToMarkdown(html) { return html.replace(/<h2[^>]*>(.*?)<\/h2>/gi, "\n## $1\n").replace(/<h3[^>]*>(.*?)<\/h3>/gi, "\n### $1\n").replace(/<li[^>]*>(.*?)<\/li>/gi, "- $1\n").replace(/<br\s*\/?>(?=\s*)/gi, "\n").replace(/<\/(p|div)>/gi, "\n\n").replace(/<strong[^>]*>(.*?)<\/strong>/gi, "**$1**").replace(/<em[^>]*>(.*?)<\/em>/gi, "*$1*").replace(/<[^>]+>/g, "").trim(); }
 function escapeHtml(text) { return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\"/g, "&quot;"); }

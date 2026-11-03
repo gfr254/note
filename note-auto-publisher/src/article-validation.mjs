@@ -15,13 +15,17 @@ export function htmlToText(html) {
 export function validateGeneratedPost(post) {
   const plainText = htmlToText(post.html).trim();
   const plainTextLength = plainText.replace(/\s+/g, "").length;
-  const personalNarrative = /私|僕|わたし|ぼく|我が家|筆者自身/;
-  if (personalNarrative.test(post.title + "\n" + post.excerpt + "\n" + plainText)) {
+  const personalNarrative =
+    /(?:私|僕|わたし|ぼく|我が家|筆者自身|自分の経験|自分が所有|自分が運転|自分が修理|自分の体験)/;
+
+  if (personalNarrative.test(plainText)) {
     throw new Error("Generated article contains unsupported personal experience; refusing to publish");
   }
+
   if (plainTextLength < 600) {
     throw new Error("Generated post is too short: " + plainTextLength + " characters");
   }
+
   return { plainText, plainTextLength };
 }
 

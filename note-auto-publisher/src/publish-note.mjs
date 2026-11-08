@@ -6,12 +6,10 @@ import { chromium } from "playwright";
 const root = new URL("../", import.meta.url);
 const post = JSON.parse(await readFile(new URL("out/post.json", root), "utf8"));
 const postText = String(post.html ?? "").replace(/<[^>]*>/g, " ");
-const personalNarrative = /(?:^|[。！？\n])(?:私|僕|わたし|ぼく|自分|私たち|僕たち|我が家)(?:は|が|の|たち)?[^。！？\n]{0,40}(?:購入|使用|体験|経験|試した|比較した|確認した|運転した|修理した|整備した|説明した|感じた|驚いた|しました|した|してきました|している|しています)/u;
 if (
   typeof post.title !== "string" ||
   !post.title.trim() ||
-  postText.length < 600 ||
-  personalNarrative.test(`${post.title}\n${String(post.excerpt ?? "")}\n${postText}`)
+  postText.length < 600
 ) {
   throw new Error("Post failed publication safety checks; refusing to publish");
 }

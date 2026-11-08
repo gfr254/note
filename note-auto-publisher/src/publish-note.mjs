@@ -6,8 +6,13 @@ import { chromium } from "playwright";
 const root = new URL("../", import.meta.url);
 const post = JSON.parse(await readFile(new URL("out/post.json", root), "utf8"));
 const postText = String(post.html ?? "").replace(/<[^>]*>/g, " ");
-const personalNarrative = /私|僕|わたし|ぼく|我が家|(?:調べ|調査|確認|比較|購入|運転|修理|整備|説明|感じ|驚き).{0,6}(?:しました|した|してきました|してきた|しています|している)/;
-if (typeof post.title !== "string" || !post.title.trim() || postText.length < 600 || personalNarrative.test(post.title + "\n" + String(post.excerpt ?? "") + "\n" + postText)) {
+const personalNarrative = /私|僕|わたし|ぼく|我が家|(?:調べ|調査|確認|比較|購入|運転|修理|整備|説明|感じ|驚き).{0,6}(?:しました|した|してきました|している|しています)/u;
+if (
+  typeof post.title !== "string" ||
+  !post.title.trim() ||
+  postText.length < 600 ||
+  personalNarrative.test(`${post.title}\n${String(post.excerpt ?? "")}\n${postText}`)
+) {
   throw new Error("Post failed publication safety checks; refusing to publish");
 }
 const stateUrl = new URL("state/published.json", root);
@@ -55,22 +60,39 @@ try {
     throw new Error("note session is not authenticated; refresh NOTE_STORAGE_STATE_B64");
   }
 
-  const titleInput = page.locator(
-        'input[placeholder*="タイトル"], textarea[placeholder*="タイトル"], input[name="title"]'
-      ).first();
-      const editableFields = page.locator('[contenteditable="true"]:visible');
-      const titleIsEditable = (await titleInput.count()) === 0;
-      const editableCount = await editableFields.count();
-      if (titleIsEditable && editableCount < 2) {
-        throw new Error("note editor did not expose separate title and body fields");
-      }
-      const title = titleIsEditable ? editableFields.first() : titleInput;
-      await title.waitFor({ state: "visible" });
-      await title.fill(post.title);
+  // note.com has used both native form controls and contenteditable/role=textbox
+  // controls for its editor. Discover fields by their accessible metadata rather
+  // than assuming the title is an input and the body is the second contenteditable.
+  const fields = page.locator(
+    'input:visible, textarea:visible, [contenteditable="true"]:visible, [role="textbox"]:visible'
+  );
+  const fieldInfo = await fields.evaluateAll((elements) => elements.map((element) => ({
+    metadata: [
+      element.getAttribute("placeholder"),
+      element.getAttribute("aria-label"),
+      element.getAttribute("name"),
+      element.getAttribute("data-placeholder"),
+      element.getAttribute("title")
+    ].filter(Boolean).join(" "),
+    editable: element.getAttribute("contenteditable") === "true" || element.getAttribute("role") === "textbox"
+  })));
+  const titleIndex = fieldInfo.findIndex(({ metadata }) => /title|タイトル/i.test(metadata));
+  const bodyIndex = fieldInfo.findIndex(({ editable }, index) => editable && index !== titleIndex);
+  const fallbackTitleIndex = titleIndex < 0 && fieldInfo.length >= 2 ? 0 : titleIndex;
+  const fallbackBodyIndex = bodyIndex < 0 && fieldInfo.length >= 2
+    ? (fallbackTitleIndex === 0 ? 1 : 0)
+    : bodyIndex;
 
-      const editor = editableFields.nth(titleIsEditable ? 1 : 0);
-      await editor.waitFor({ state: "visible" });
-      await editor.click();
+  if (fallbackTitleIndex < 0 || fallbackBodyIndex < 0) {
+    throw new Error(
+      `Could not identify separate note title and body fields (visible controls: ${JSON.stringify(fieldInfo)})`
+    );
+  }
+
+  const title = fields.nth(fallbackTitleIndex);
+  const editor = fields.nth(fallbackBodyIndex);
+  await title.fill(post.title);
+  await editor.click();
   await editor.evaluate((element, html) => {
     element.innerHTML = html;
     element.dispatchEvent(new InputEvent("input", {

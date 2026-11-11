@@ -1,6 +1,6 @@
 export function htmlToText(html) {
   return String(html ?? "")
-    .replace(/<br\s*\/?>(?=\s*)/gi, "\n")
+    .replace(/<br\s*\/?> (?=\s*)/gi, "\n")
     .replace(/<li[^>]*>/gi, "- ")
     .replace(/<\/(p|h1|h2|h3|h4|li|ul|ol|div)>/gi, "\n")
     .replace(/<[^>]+>/g, "")
@@ -15,8 +15,9 @@ export function htmlToText(html) {
 export function validateGeneratedPost(post) {
   const plainText = htmlToText(post.html).trim();
   const plainTextLength = plainText.replace(/\s+/g, "").length;
-  const personalNarrative = /私|僕|わたし|ぼく|我が家|筆者自身/;
-  if (personalNarrative.test(post.title + "\n" + post.excerpt + "\n" + plainText)) {
+  const content = [post.title, post.excerpt, plainText].join("\n");
+  const personalNarrative = /(?:^|[。！？\n\s])(?:私|僕|ぼく|わたし|筆者|自分)(?:は|が|の|たち|自身|でも|に|と|から|で)/;
+  if (personalNarrative.test(content)) {
     throw new Error("Generated article contains unsupported personal experience; refusing to publish");
   }
   if (plainTextLength < 600) {
@@ -35,7 +36,8 @@ export async function requestValidatedPost(requestPost, maxAttempts = 3) {
       if (attempt === maxAttempts) throw error;
       feedback = [
         "前回の候補は公開前の検証に合格しませんでした。記事テーマは変えずに修正してください。",
-        "筆者の体験・行動・気持ちを一人称で書かず、与えられていない事実を追加しないでください。",
+        "一人称の体験・行動・気持ちを書かず、与えられていない事実や個人的な体験を追加しないでください。",
+        "特に『私は』『僕は』『私の』『自分の』『筆者自身』のような一人称の記述は避けてください。",
         "検証結果: " + String(error?.message || error),
         "安全条件と最低文字数は緩めないでください。JSON形式は維持してください。"
       ].join("\n");

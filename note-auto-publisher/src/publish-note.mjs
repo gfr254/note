@@ -2,16 +2,20 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { chromium } from "playwright";
+import { htmlToText } from "./article-validation.mjs";
 
 const root = new URL("../", import.meta.url);
 const post = JSON.parse(await readFile(new URL("out/post.json", root), "utf8"));
-const postText = String(post.html ?? "").replace(/<[^>]*>/g, " ");
-if (
-  typeof post.title !== "string" ||
-  !post.title.trim() ||
-  postText.length < 600
-) {
-  throw new Error("Post failed publication safety checks; refusing to publish");
+if (typeof post.title !== "string" || !post.title.trim()) {
+  throw new Error("Post failed publication safety checks: title is missing or empty");
+}
+if (typeof post.html !== "string" || !post.html.trim()) {
+  throw new Error("Post failed publication safety checks: HTML body is missing or empty");
+}
+const postText = htmlToText(post.html);
+const postTextLength = postText.replace(/\s+/g, "").length;
+if (postTextLength < 600) {
+  throw new Error(`Post failed publication safety checks: body has ${postTextLength} characters; minimum is 600`);
 }
 const stateUrl = new URL("state/published.json", root);
 const state = await readState(stateUrl);

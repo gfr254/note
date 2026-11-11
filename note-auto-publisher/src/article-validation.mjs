@@ -1,6 +1,6 @@
 export function htmlToText(html) {
   return String(html ?? "")
-    .replace(/<br\s*\/?> (?=\s*)/gi, "\n")
+    .replace(/<br\s*\/?>/gi, "\n")
     .replace(/<li[^>]*>/gi, "- ")
     .replace(/<\/(p|h1|h2|h3|h4|li|ul|ol|div)>/gi, "\n")
     .replace(/<[^>]+>/g, "")
@@ -16,7 +16,7 @@ export function validateGeneratedPost(post) {
   const plainText = htmlToText(post.html).trim();
   const plainTextLength = plainText.replace(/\s+/g, "").length;
   const content = [post.title, post.excerpt, plainText].join("\n");
-  const personalNarrative = /(?:^|[。！？\n\s])(?:私|僕|ぼく|わたし|筆者|自分)(?:は|が|の|たち|自身|でも|に|と|から|で)/;
+  const personalNarrative = /(?:^|[。！？\n\s])(?:私|僕|ぼく|わたし|筆者|自分)(?:は|が|の|たち|自身|でも|に|と|から|で|達)/;
   if (personalNarrative.test(content)) {
     throw new Error("Generated article contains unsupported personal experience; refusing to publish");
   }

@@ -62,36 +62,61 @@ try {
     throw new Error("note session is not authenticated; refresh NOTE_STORAGE_STATE_B64");
   }
 
-  // note.com has used both native form controls and contenteditable/role=textbox
-  // controls for its editor. Discover fields by their accessible metadata rather
-  // than assuming the title is an input and the body is the second contenteditable.
-  // Some editor states render the fields lazily or temporarily hide them while the
-  // page is still loading. Wait for candidate inputs to appear before falling back
-  // to the heuristic selection below.
-  const fieldSelector = 'input, textarea, [contenteditable="true"], [role="textbox"]';
+  // note.com has used native inputs, contenteditable fields, and role=textbox
+  // editors over time. Match the widest practical set and prefer metadata such as
+  // aria-label / placeholder / title to avoid assuming a fixed DOM structure.
+  const fieldSelector = [
+    "input:not([type='hidden'])",
+    "textarea",
+    "[contenteditable='true']",
+    "[contenteditable='plaintext-only']",
+    "[role='textbox']",
+    "[aria-label*='タイトル']",
+    "[aria-label*='タイトルを入力']",
+    "[aria-label*='本文']",
+    "[aria-label*='title']",
+    "[aria-label*='body']",
+    "[placeholder*='タイトル']",
+    "[placeholder*='本文']",
+    "[placeholder*='title']",
+    "[placeholder*='body']",
+    "[data-placeholder*='タイトル']",
+    "[data-placeholder*='本文']",
+    "[data-placeholder*='title']",
+    "[data-placeholder*='body']",
+    "[title*='タイトル']",
+    "[title*='本文']",
+    "[title*='title']",
+    "[title*='body']"
+  ].join(", ");
+
   await page.waitForFunction(
     (selector) => {
       const elements = [...document.querySelectorAll(selector)];
-      if (elements.length < 2) return false;
+      if (elements.length === 0) return false;
       return elements.some((element) => {
         const style = window.getComputedStyle(element);
         if (style.display === "none" || style.visibility === "hidden") {
           return false;
         }
-        return element instanceof HTMLInputElement ||
-          element instanceof HTMLTextAreaElement ||
-          element.getAttribute("contenteditable") === "true" ||
-          element.getAttribute("role") === "textbox";
+        const rect = element.getBoundingClientRect();
+        if (rect.width === 0 && rect.height === 0 && !(element instanceof HTMLInputElement) && !(element instanceof HTMLTextAreaElement)) {
+          const text = (element.textContent || "").trim();
+          const labelled = element.getAttribute("aria-label") || element.getAttribute("placeholder") || element.getAttribute("data-placeholder") || element.getAttribute("title");
+          if (!text && !labelled) return false;
+        }
+        return true;
       });
     },
     fieldSelector,
-    { timeout: 15_000 }
+    { timeout: 30_000 }
   ).catch(() => {});
 
   const fields = page.locator(fieldSelector);
   const fieldInfo = await fields.evaluateAll((elements) => elements.map((element) => {
     const style = window.getComputedStyle(element);
-    const visible = style.display !== "none" && style.visibility !== "hidden" && element.getBoundingClientRect().width > 0 && element.getBoundingClientRect().height > 0;
+    const rect = element.getBoundingClientRect();
+    const visible = style.display !== "none" && style.visibility !== "hidden" && (rect.width > 0 || rect.height > 0 || element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement);
     const metadata = [
       element.getAttribute("placeholder"),
       element.getAttribute("aria-label"),
@@ -99,32 +124,36 @@ try {
       element.getAttribute("data-placeholder"),
       element.getAttribute("title")
     ].filter(Boolean).join(" ");
-    const editable = element.getAttribute("contenteditable") === "true" || element.getAttribute("role") === "textbox" ||
-      (element instanceof HTMLTextAreaElement) ||
-      (element instanceof HTMLInputElement && element.type !== "hidden");
+    const editable = element instanceof HTMLTextAreaElement ||
+      element instanceof HTMLInputElement && element.type !== "hidden" ||
+      element.getAttribute("contenteditable") === "true" ||
+      element.getAttribute("contenteditable") === "plaintext-only" ||
+      element.getAttribute("role") === "textbox";
     const tagName = element.tagName.toLowerCase();
     return { metadata, editable, visible, tagName };
   }));
 
-  const candidates = fieldInfo.length > 0 ? fieldInfo : [];
-  const titleIndex = candidates.findIndex(({ metadata, tagName, editable }) =>
-    /title|タイトル/i.test(metadata) ||
-    (!editable && /title|タイトル/i.test(tagName + " " + metadata))
-  );
-  const bodyIndex = candidates.findIndex(({ editable, metadata }, index) =>
-    editable && (index !== titleIndex || /本文|body|content|text|記事/i.test(metadata))
-  );
+  const candidates = fieldInfo.filter(({ visible, metadata, tagName, editable }) => visible || editable || metadata || tagName);
+  const titleIndex = candidates.findIndex(({ metadata, tagName, editable }) => {
+    const label = `${tagName} ${metadata}`.toLowerCase();
+    return /title|タイトル|heading/i.test(label) || (!editable && /title|タイトル/i.test(label));
+  });
+  const bodyIndex = candidates.findIndex(({ editable, metadata, tagName }, index) => {
+    const label = `${tagName} ${metadata}`.toLowerCase();
+    return editable && (/本文|body|content|text|記事|入力/i.test(label) || index !== titleIndex);
+  });
+
   const fallbackTitleIndex = titleIndex >= 0
     ? titleIndex
     : candidates.findIndex(({ editable, metadata, tagName }) => {
       const label = `${tagName} ${metadata}`.toLowerCase();
-      return !editable && /title|タイトル/i.test(label);
+      return !editable && /title|タイトル|heading/i.test(label);
     });
   const fallbackBodyIndex = bodyIndex >= 0
     ? bodyIndex
     : candidates.findIndex(({ editable, metadata, tagName }) => {
       const label = `${tagName} ${metadata}`.toLowerCase();
-      return editable || /本文|body|content|text|記事/i.test(label);
+      return editable || /本文|body|content|text|記事|入力/i.test(label);
     });
 
   const resolvedTitleIndex = fallbackTitleIndex >= 0 ? fallbackTitleIndex : (candidates.length >= 2 ? 0 : -1);
@@ -132,7 +161,7 @@ try {
 
   if (resolvedTitleIndex < 0 || resolvedBodyIndex < 0) {
     throw new Error(
-      `Could not identify separate note title and body fields (visible controls: ${JSON.stringify(candidates)})`
+      `Could not identify separate note title and body fields on ${page.url()} (visible controls: ${JSON.stringify(candidates)})`
     );
   }
 

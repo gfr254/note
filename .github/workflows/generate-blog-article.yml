@@ -1,44 +1,6 @@
 name: Generate blog article
 
 on:
-  workflow_dispatch:
-    inputs:
-      topic:
-        description: "記事テーマ"
-        required: false
-        type: string
-      audience:
-        description: "想定読者"
-        required: false
-        type: string
-      angle:
-        description: "記事の切り口"
-        required: false
-        type: string
-      tone:
-        description: "文体"
-        required: false
-        type: string
-      length:
-        description: "希望文字数"
-        required: false
-        default: "1800〜2500文字"
-        type: string
-      platform:
-        description: "出力先"
-        required: false
-        default: "note"
-        type: string
-      commit_output:
-        description: "生成物をリポジトリにも保存する"
-        required: true
-        default: true
-        type: boolean
-      publish:
-        description: "noteへ実際に公開する（公開操作）"
-        required: true
-        default: false
-        type: boolean
   schedule:
     - cron: "0 0 * * 6"
 
@@ -59,30 +21,51 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 20
-      - name: Generate article
+
+      - name: Generate article with a random air-cooled Beetle topic
+        shell: bash
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           OPENAI_MODEL: ${{ vars.OPENAI_MODEL || 'gpt-4o-mini' }}
-          BLOG_TOPIC: ${{ inputs.topic || '' }}
-          BLOG_AUDIENCE: ${{ inputs.audience || '' }}
-          BLOG_ANGLE: ${{ inputs.angle || '' }}
-          BLOG_TONE: ${{ inputs.tone || '' }}
-          BLOG_LENGTH: ${{ inputs.length || '' }}
-          BLOG_PLATFORM: ${{ inputs.platform || 'note' }}
-        run: npm run generate
+        run: |
+          themes=(
+            "空冷ビートルの購入前に確認すべきポイント"
+            "空冷ビートルの年式ごとの差分と選び方"
+            "空冷ビートルの維持費と故障予防の実務知識"
+            "空冷ビートルの整備・部品入手で失敗しないポイント"
+            "空冷ビートルの歴史と構造を知って選ぶ"
+            "空冷ビートルのエンジン・駆動系・足回りの見方"
+            "空冷ビートルの購入時に確認したい車両状態と書類"
+            "空冷ビートルのレストアと日常の維持で注意したいこと"
+          )
+
+          BLOG_TOPIC="${themes[$((RANDOM % ${#themes[@]}))]}"
+          echo "Selected topic: ${BLOG_TOPIC}"
+          export BLOG_TOPIC
+          export BLOG_AUDIENCE="空冷ビートルに興味があり、購入検討や維持について信頼できる情報を探している初心者・オーナー"
+          export BLOG_ANGLE="今回のテーマについて、確認できる根拠と実用的な確認手順を整理する。個人の所有・整備体験や未確認の情報は作らない"
+          export BLOG_TONE="中立的で誠実、初心者にも分かりやすい実用ガイド調。日記や一人称の体験談は禁止"
+          export BLOG_LENGTH="1800〜2500文字"
+          export BLOG_PLATFORM="note"
+          npm run generate
+
       - name: Install Playwright
         run: npm install --no-save --no-package-lock --no-audit --no-fund playwright
+
       - name: Install Chromium
         run: npx playwright install --with-deps chromium
+
       - name: Publish to note
         env:
           NOTE_STORAGE_STATE_B64: ${{ secrets.NOTE_STORAGE_STATE_B64 }}
-          PUBLISH_NOTE: ${{ github.event_name == 'schedule' || inputs.publish == true }}
+          PUBLISH_NOTE: "true"
         run: xvfb-run -a node src/publish-note.mjs
+
       - name: Upload generated article and publish result
         if: always()
         uses: actions/upload-artifact@v4
@@ -91,11 +74,12 @@ jobs:
           path: note-auto-publisher/out/
           if-no-files-found: warn
           retention-days: 30
+
       - name: Commit generated article and publication state
-        if: ${{ github.event_name == 'schedule' || inputs.commit_output == true || inputs.publish == true }}
+        if: always()
         working-directory: .
         run: |
-          git add -f note-auto-publisher/out/post.json note-auto-publisher/out/post.txt note-auto-publisher/out/post.md note-auto-publisher/out/post.html note-auto-publisher/out/publish-result.json note-auto-publisher/state/published.json
+          git add -f note-auto-publisher/out/
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git diff --cached --quiet || git commit -m "chore: generate and publish note article [skip ci]"

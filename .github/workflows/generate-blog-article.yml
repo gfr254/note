@@ -1,44 +1,6 @@
 name: Generate blog article
 
 on:
-  workflow_dispatch:
-    inputs:
-      topic:
-        description: "記事テーマ"
-        required: false
-        type: string
-      audience:
-        description: "想定読者"
-        required: false
-        type: string
-      angle:
-        description: "記事の切り口"
-        required: false
-        type: string
-      tone:
-        description: "文体"
-        required: false
-        type: string
-      length:
-        description: "希望文字数"
-        required: false
-        default: "1800〜2500文字"
-        type: string
-      platform:
-        description: "出力先"
-        required: false
-        default: "note"
-        type: string
-      commit_output:
-        description: "生成物をリポジトリにも保存する"
-        required: true
-        default: true
-        type: boolean
-      publish:
-        description: "noteへ実際に公開する（公開操作）"
-        required: true
-        default: false
-        type: boolean
   schedule:
     - cron: "0 0 * * 6"
 
@@ -69,12 +31,12 @@ jobs:
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           OPENAI_MODEL: ${{ vars.OPENAI_MODEL || 'gpt-4o-mini' }}
-          BLOG_TOPIC: ${{ inputs.topic || '' }}
-          BLOG_AUDIENCE: ${{ inputs.audience || '' }}
-          BLOG_ANGLE: ${{ inputs.angle || '' }}
-          BLOG_TONE: ${{ inputs.tone || '' }}
-          BLOG_LENGTH: ${{ inputs.length || '' }}
-          BLOG_PLATFORM: ${{ inputs.platform || 'note' }}
+          BLOG_TOPIC: ${{ github.event.inputs.topic || '' }}
+          BLOG_AUDIENCE: ${{ github.event.inputs.audience || '' }}
+          BLOG_ANGLE: ${{ github.event.inputs.angle || '' }}
+          BLOG_TONE: ${{ github.event.inputs.tone || '' }}
+          BLOG_LENGTH: ${{ github.event.inputs.length || '' }}
+          BLOG_PLATFORM: ${{ github.event.inputs.platform || 'note' }}
         run: npm run generate
 
       - name: Install Playwright
@@ -86,7 +48,7 @@ jobs:
       - name: Publish to note
         env:
           NOTE_STORAGE_STATE_B64: ${{ secrets.NOTE_STORAGE_STATE_B64 }}
-          PUBLISH_NOTE: ${{ github.event_name == 'schedule' || inputs.publish == true }}
+          PUBLISH_NOTE: ${{ github.event_name == 'schedule' || github.event.inputs.publish == true }}
         run: xvfb-run -a node src/publish-note.mjs
 
       - name: Upload generated article and publish result
@@ -99,7 +61,7 @@ jobs:
           retention-days: 30
 
       - name: Commit generated article and publication state
-        if: ${{ github.event_name == 'schedule' || inputs.commit_output == true || inputs.publish == true }}
+        if: ${{ github.event_name == 'schedule' || github.event.inputs.commit_output == true || github.event.inputs.publish == true }}
         working-directory: .
         run: |
           git add -f note-auto-publisher/out/post.json note-auto-publisher/out/post.txt note-auto-publisher/out/post.md note-auto-publisher/out/post.html note-auto-publisher/out/publish-result.json

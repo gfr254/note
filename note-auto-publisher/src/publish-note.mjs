@@ -63,8 +63,8 @@ try {
   }
 
   // note.com has used native inputs, contenteditable fields, and role=textbox
-  // editors over time. Match the widest practical set and prefer metadata such as
-  // aria-label / placeholder / title to avoid assuming a fixed DOM structure.
+  // editors over time. Match metadata-based selectors and inspect every frame,
+  // since embedded editor implementations may place controls outside the main document.
   const fieldSelector = [
     "input:not([type='hidden'])",
     "textarea",
@@ -90,83 +90,60 @@ try {
     "[title*='body']"
   ].join(", ");
 
-  await page.waitForFunction(
-    (selector) => {
-      const elements = [...document.querySelectorAll(selector)];
-      if (elements.length === 0) return false;
-      return elements.some((element) => {
-        const style = window.getComputedStyle(element);
-        if (style.display === "none" || style.visibility === "hidden") {
-          return false;
-        }
-        const rect = element.getBoundingClientRect();
-        if (rect.width === 0 && rect.height === 0 && !(element instanceof HTMLInputElement) && !(element instanceof HTMLTextAreaElement)) {
-          const text = (element.textContent || "").trim();
-          const labelled = element.getAttribute("aria-label") || element.getAttribute("placeholder") || element.getAttribute("data-placeholder") || element.getAttribute("title");
-          if (!text && !labelled) return false;
-        }
-        return true;
-      });
-    },
-    fieldSelector,
-    { timeout: 30_000 }
-  ).catch(() => {});
+  const frames = page.frames();
+  const fieldRecords = [];
+  for (const [frameIndex, frame] of frames.entries()) {
+    const fields = frame.locator(fieldSelector);
+    const fieldInfo = await fields.evaluateAll((elements) => elements.map((element) => {
+      const style = window.getComputedStyle(element);
+      const rect = element.getBoundingClientRect();
+      const isNativeControl = element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement;
+      const visible = style.display !== "none" && style.visibility !== "hidden" &&
+        (rect.width > 0 || rect.height > 0 || isNativeControl);
+      const metadata = [
+        element.getAttribute("placeholder"),
+        element.getAttribute("aria-label"),
+        element.getAttribute("name"),
+        element.getAttribute("data-placeholder"),
+        element.getAttribute("title")
+      ].filter(Boolean).join(" ");
+      const editable = element instanceof HTMLTextAreaElement ||
+        element instanceof HTMLInputElement && element.type !== "hidden" ||
+        element.getAttribute("contenteditable") === "true" ||
+        element.getAttribute("contenteditable") === "plaintext-only" ||
+        element.getAttribute("role") === "textbox";
+      return { metadata, editable, visible, tagName: element.tagName.toLowerCase() };
+    }));
+    fieldInfo.forEach((info, elementIndex) => fieldRecords.push({
+      ...info,
+      frameIndex,
+      elementIndex,
+      frame,
+      frameUrl: frame.url()
+    }));
+  }
 
-  const fields = page.locator(fieldSelector);
-  const fieldInfo = await fields.evaluateAll((elements) => elements.map((element) => {
-    const style = window.getComputedStyle(element);
-    const rect = element.getBoundingClientRect();
-    const visible = style.display !== "none" && style.visibility !== "hidden" && (rect.width > 0 || rect.height > 0 || element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement);
-    const metadata = [
-      element.getAttribute("placeholder"),
-      element.getAttribute("aria-label"),
-      element.getAttribute("name"),
-      element.getAttribute("data-placeholder"),
-      element.getAttribute("title")
-    ].filter(Boolean).join(" ");
-    const editable = element instanceof HTMLTextAreaElement ||
-      element instanceof HTMLInputElement && element.type !== "hidden" ||
-      element.getAttribute("contenteditable") === "true" ||
-      element.getAttribute("contenteditable") === "plaintext-only" ||
-      element.getAttribute("role") === "textbox";
-    const tagName = element.tagName.toLowerCase();
-    return { metadata, editable, visible, tagName };
-  }));
-
-  const candidates = fieldInfo.filter(({ visible, metadata, tagName, editable }) => visible || editable || metadata || tagName);
-  const titleIndex = candidates.findIndex(({ metadata, tagName, editable }) => {
-    const label = `${tagName} ${metadata}`.toLowerCase();
-    return /title|タイトル|heading/i.test(label) || (!editable && /title|タイトル/i.test(label));
-  });
-  const bodyIndex = candidates.findIndex(({ editable, metadata, tagName }, index) => {
-    const label = `${tagName} ${metadata}`.toLowerCase();
-    return editable && (/本文|body|content|text|記事|入力/i.test(label) || index !== titleIndex);
-  });
-
-  const fallbackTitleIndex = titleIndex >= 0
-    ? titleIndex
-    : candidates.findIndex(({ editable, metadata, tagName }) => {
-      const label = `${tagName} ${metadata}`.toLowerCase();
-      return !editable && /title|タイトル|heading/i.test(label);
-    });
-  const fallbackBodyIndex = bodyIndex >= 0
-    ? bodyIndex
-    : candidates.findIndex(({ editable, metadata, tagName }) => {
-      const label = `${tagName} ${metadata}`.toLowerCase();
-      return editable || /本文|body|content|text|記事|入力/i.test(label);
-    });
-
-  const resolvedTitleIndex = fallbackTitleIndex >= 0 ? fallbackTitleIndex : (candidates.length >= 2 ? 0 : -1);
-  const resolvedBodyIndex = fallbackBodyIndex >= 0 ? fallbackBodyIndex : (candidates.length >= 2 ? 1 : -1);
+  const candidates = fieldRecords.filter(({ visible }) => visible);
+  const titleIndex = candidates.findIndex(({ metadata, tagName }) =>
+    /title|タイトル|heading/i.test(`${tagName} ${metadata}`));
+  const bodyIndex = candidates.findIndex(({ editable, metadata, tagName }, index) =>
+    editable && (/本文|body|content|text|記事|入力/i.test(`${tagName} ${metadata}`) || index !== titleIndex));
+  const resolvedTitleIndex = titleIndex >= 0 ? titleIndex : (candidates.length >= 2 ? 0 : -1);
+  const resolvedBodyIndex = bodyIndex >= 0 ? bodyIndex : (candidates.length >= 2 ? 1 : -1);
 
   if (resolvedTitleIndex < 0 || resolvedBodyIndex < 0) {
+    const visibleControls = candidates.map(({ metadata, editable, tagName, frameIndex, frameUrl }) => ({
+      metadata, editable, tagName, frameIndex, frameUrl
+    }));
     throw new Error(
-      `Could not identify separate note title and body fields on ${page.url()} (visible controls: ${JSON.stringify(candidates)})`
+      `Could not identify separate note title and body fields on ${page.url()} (visible controls: ${JSON.stringify(visibleControls)}, frames: ${JSON.stringify(frames.map((frame) => frame.url()))})`
     );
   }
 
-  const title = fields.nth(resolvedTitleIndex);
-  const editor = fields.nth(resolvedBodyIndex);
+  const titleRecord = candidates[resolvedTitleIndex];
+  const bodyRecord = candidates[resolvedBodyIndex];
+  const title = titleRecord.frame.locator(fieldSelector).nth(titleRecord.elementIndex);
+  const editor = bodyRecord.frame.locator(fieldSelector).nth(bodyRecord.elementIndex);
   await title.fill(post.title);
   await editor.click();
   await editor.evaluate((element, html) => {
